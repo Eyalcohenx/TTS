@@ -1,7 +1,7 @@
 import logging
 import re
 import subprocess
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from packaging.version import Version
 
@@ -80,6 +80,22 @@ def _espeak_exe(espeak_lib: str, args: List, sync=False) -> List[str]:
     return res2
 
 
+def _restore_text_in_double_brackets(text, bracket_matches):
+    # if there are no double brackets, return the text as is
+    if not bracket_matches:
+        return text
+
+    def restore_brackets(match):
+        nonlocal bracket_matches
+        return f"[[{bracket_matches.pop(0)}]]" if bracket_matches else match.group()
+
+    new_text = text.copy()
+    for i in range(len(text)):
+        new_text[i] = re.sub('\uE000', restore_brackets, text[i])
+
+    return new_text
+
+
 class ESpeak(BasePhonemizer):
     """ESpeak wrapper calling `espeak` or `espeak-ng` from the command-line the perform G2P
 
@@ -109,10 +125,11 @@ class ESpeak(BasePhonemizer):
     _ESPEAK_LIB = _DEF_ESPEAK_LIB
     _ESPEAK_VER = _DEF_ESPEAK_VER
 
-    def __init__(self, language: str, backend=None, punctuations=Punctuation.default_puncs(), keep_puncs=True):
+    def __init__(self, language: str, backend=None, punctuations=Punctuation.default_puncs(), keep_puncs=True, accept_phonemes_directly=False):
         if self._ESPEAK_LIB is None:
             raise Exception(" [!] No espeak backend found. Install espeak-ng or espeak to your system.")
         self.backend = self._ESPEAK_LIB
+        self.accept_phonemes_directly = accept_phonemes_directly
 
         # band-aid for backwards compatibility
         if language == "en":
@@ -208,6 +225,24 @@ class ESpeak(BasePhonemizer):
     def _phonemize(self, text, separator=None):
         return self.phonemize_espeak(text, separator, tie=False)
 
+    def _phonemize_preprocess(self, text) -> Tuple[List[str], List]:
+        """Preprocess the text before phonemization
+
+        In case we want to preserve direct phonemes we switch the phonemes inside double brackets to empty
+        double brackets and then apply the super method
+        """
+
+        bracket_matches = []
+        if self.accept_phonemes_directly:
+            bracket_matches = re.findall(r'\[\[(.*?)\]\]', text)
+            text = re.sub(r'\[\[.*?\]\]', '\uE000', text)
+
+        # Apply the super method to handle punctuation and spaces
+        text, punctuations = super()._phonemize_preprocess(text)
+
+        # Split the text by spaces to phonemize each part separately
+        return _restore_text_in_double_brackets(text, bracket_matches), punctuations
+
     @staticmethod
     def supported_languages() -> Dict:
         """Get a dictionary of supported languages.
@@ -248,6 +283,14 @@ class ESpeak(BasePhonemizer):
         """Return true if ESpeak is available else false"""
         return is_tool("espeak") or is_tool("espeak-ng")
 
+    # set to accept phonemes directly
+    def set_accept_phonemes_directly(self, accept: bool = True):
+        """Set to accept phonemes directly in double brackets.
+
+        Args:
+            accept (bool): If True, accept phonemes directly in double brackets.
+        """
+        self.accept_phonemes_directly = accept
 
 if __name__ == "__main__":
     e = ESpeak(language="en-us")
