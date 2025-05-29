@@ -11,6 +11,7 @@ from .english.abbreviations import abbreviations_en
 from .english.number_norm import normalize_numbers as en_normalize_numbers
 from .english.time_norm import expand_time_english
 from .french.abbreviations import abbreviations_fr
+from .hebrew.diacritics import normalize_hebrew_diacritics
 
 # Regular expression matching whitespace:
 _whitespace_re = re.compile(r"\s+")
@@ -164,6 +165,12 @@ def multilingual_cleaners(text):
     text = collapse_whitespace(text)
     return text
 
+def hebrew_cleaners(text):
+    text = lowercase(text)
+    text = replace_symbols(text, lang=None)
+    text = collapse_whitespace(text)
+    text = normalize_hebrew_diacritics(text)
+    return text
 
 def no_cleaners(text):
     # remove newline characters
